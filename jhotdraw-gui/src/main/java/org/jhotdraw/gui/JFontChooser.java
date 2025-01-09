@@ -1,10 +1,4 @@
-/*
- * @(#)JFontChooser.java
- *
- * Copyright (c) 2008 The authors and contributors of JHotDraw.
- * You may not use, copy or modify this file, except in compliance with the
- * accompanying license terms.
- */
+// File: jhotdraw-gui/src/main/java/org/jhotdraw/gui/JFontChooser.java
 package org.jhotdraw.gui;
 
 import java.awt.*;
@@ -93,27 +87,6 @@ public class JFontChooser extends JComponent {
      * This future is used to load fonts lazily
      */
     private static FutureTask<Font[]> future;
-    private TreeModelListener modelHandler = new TreeModelListener() {
-        @Override
-        public void treeNodesChanged(TreeModelEvent e) {
-            updateSelectionPath(getSelectedFont());
-        }
-
-        @Override
-        public void treeNodesInserted(TreeModelEvent e) {
-            updateSelectionPath(getSelectedFont());
-        }
-
-        @Override
-        public void treeNodesRemoved(TreeModelEvent e) {
-            updateSelectionPath(getSelectedFont());
-        }
-
-        @Override
-        public void treeStructureChanged(TreeModelEvent e) {
-            updateSelectionPath(getSelectedFont());
-        }
-    };
 
     /**
      * Creates new form JFontChooser
@@ -121,21 +94,9 @@ public class JFontChooser extends JComponent {
     public JFontChooser() {
         loadAllFonts();
         model = new DefaultFontChooserModel.UIResource();
-        model.addTreeModelListener(modelHandler);
+        model.addTreeModelListener(new ModelHandler());
         updateUI();
-        addPropertyChangeListener(new PropertyChangeListener() {
-            @Override
-            public void propertyChange(PropertyChangeEvent evt) {
-                if ("ancestor".equals(evt.getPropertyName()) && evt.getNewValue() != null) {
-                    try {
-                        ((DefaultFontChooserModel) model).setFonts(getAllFonts());
-                    } catch (Exception ex) {
-                        ex.printStackTrace();
-                    }
-                    JFontChooser.this.removePropertyChangeListener(this);
-                }
-            }
-        });
+        addPropertyChangeListener(new AncestorPropertyChangeListener());
     }
 
     /**
@@ -268,9 +229,7 @@ public class JFontChooser extends JComponent {
             if (listeners[i] == ActionListener.class) {
                 // Lazily create the event:
                 if (e == null) {
-                    e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED,
-                            command, mostRecentEventTime,
-                            modifiers);
+                    e = new ActionEvent(this, ActionEvent.ACTION_PERFORMED, command, mostRecentEventTime, modifiers);
                 }
                 ((ActionListener) listeners[i + 1]).actionPerformed(e);
             }
@@ -337,12 +296,9 @@ public class JFontChooser extends JComponent {
     }
 
     /**
-     * Gets all fonts from the graphics environment. This may take a long
-     * time. It is recommended to call loadAllFonts during the startup
-     * of an application. If you do this, you can retrieve the fonts from
-     * this method from the AWT Event Dispatcher Thread.
+     * Returns all fonts that have been loaded.
      *
-     * @return All fonts.
+     * @return An array of all fonts.
      */
     public static synchronized Font[] getAllFonts() {
         loadAllFonts();
@@ -365,11 +321,6 @@ public class JFontChooser extends JComponent {
 
     /**
      * Sets the selected Font.
-     * <p>
-     * Changing the selected font, causes a change of the
-     * selection path, if the selected font is not the last
-     * path segment of the selection path.
-     *
      * This is a bound property.
      *
      * @param newValue The new selected font, or null if no font is to be
@@ -383,12 +334,9 @@ public class JFontChooser extends JComponent {
     }
 
     /**
-     * Updates the selection path to the selected font.
-     * <p>
-     * This method is invoked, when a font is selected, and when then
-     * structure of the model has changed.
+     * Updates the selection path based on the selected font.
      *
-     * @param newValue
+     * @param newValue The new selected font.
      */
     protected void updateSelectionPath(Font newValue) {
         if (newValue == null || selectionPath == null || selectionPath.getPathCount() != 4
@@ -402,49 +350,13 @@ public class JFontChooser extends JComponent {
                 FontFaceNode oldFace = (path != null && path.getPathCount() > 3) ? (FontFaceNode) path.getPathComponent(3) : null;
                 FontCollectionNode newCollection = oldCollection;
                 FontFamilyNode newFamily = oldFamily;
-                FontFaceNode newFace = null;
-                // search in the current family
-                if (newFace == null && newFamily != null) {
-                    for (FontFaceNode face : newFamily.faces()) {
-                        if (face.getFont().getFontName().equals(newValue.getFontName())) {
-                            newFace = face;
-                            break;
-                        }
-                    }
-                }
-                // search in the current collection
-                if (newFace == null && newCollection != null) {
-                    for (FontFamilyNode family : newCollection.families()) {
-                        for (FontFaceNode face : family.faces()) {
-                            if (face.getFont().getFontName().equals(newValue.getFontName())) {
-                                newFamily = family;
-                                newFace = face;
-                                break;
-                            }
-                        }
-                    }
-                }
-                // search in all collections
-                if (newFace == null) {
-                    TreeNode root = (TreeNode) getModel().getRoot();
-                    OuterLoop:
-                    for (int i = 0, n = root.getChildCount(); i < n; i++) {
-                        FontCollectionNode collection = (FontCollectionNode) root.getChildAt(i);
-                        for (FontFamilyNode family : collection.families()) {
-                            for (FontFaceNode face : family.faces()) {
-                                if (face.getFont().getFontName().equals(newValue.getFontName())) {
-                                    newCollection = collection;
-                                    newFamily = family;
-                                    newFace = face;
-                                    break OuterLoop;
-                                }
-                            }
-                        }
-                    }
-                }
+                FontFaceNode newFace = findFontFaceNode(newValue, newCollection, newFamily);
                 if (newFace != null) {
                     setSelectionPath(new TreePath(new Object[]{
-                        getModel().getRoot(), newCollection, newFamily, newFace
+                            getModel().getRoot(),
+                            newCollection,
+                            newFamily,
+                            newFace
                     }));
                 } else {
                     setSelectionPath(null);
@@ -453,45 +365,115 @@ public class JFontChooser extends JComponent {
         }
     }
 
+    private FontFaceNode findFontFaceNode(Font newValue, FontCollectionNode newCollection, FontFamilyNode newFamily) {
+        FontFaceNode newFace = null;
+        if (newFace == null && newFamily != null) {
+            newFace = findFontFaceInFamily(newValue, newFamily);
+        }
+        if (newFace == null && newCollection != null) {
+            newFace = findFontFaceInCollection(newValue, newCollection);
+        }
+        if (newFace == null) {
+            newFace = findFontFaceInAllCollections(newValue);
+        }
+        return newFace;
+    }
+
+    private FontFaceNode findFontFaceInFamily(Font newValue, FontFamilyNode newFamily) {
+        for (FontFaceNode face : newFamily.faces()) {
+            if (face.getFont().getFontName().equals(newValue.getFontName())) {
+                return face;
+            }
+        }
+        return null;
+    }
+
+    private FontFaceNode findFontFaceInCollection(Font newValue, FontCollectionNode newCollection) {
+        for (FontFamilyNode family : newCollection.families()) {
+            for (FontFaceNode face : family.faces()) {
+                if (face.getFont().getFontName().equals(newValue.getFontName())) {
+                    return face;
+                }
+            }
+        }
+        return null;
+    }
+
+    private FontFaceNode findFontFaceInAllCollections(Font newValue) {
+        TreeNode root = (TreeNode) getModel().getRoot();
+        for (int i = 0, n = root.getChildCount(); i < n; i++) {
+            FontCollectionNode collection = (FontCollectionNode) root.getChildAt(i);
+            for (FontFamilyNode family : collection.families()) {
+                for (FontFaceNode face : family.faces()) {
+                    if (face.getFont().getFontName().equals(newValue.getFontName())) {
+                        return face;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     /**
-     * Gets the selected Font.
-     * This is a bound property.
+     * Gets the model of the JFontChooser.
      *
-     * @return The selected font, or null, if no font is selected.
+     * @return The model.
      */
     public FontChooserModel getModel() {
         return model;
     }
 
     /**
-     * Sets the selected Font.
-     * This is a bound property.
+     * Sets the model of the JFontChooser.
      *
-     * @param newValue The new selected font, or null if no font is to be
-     * selected..
+     * @param newValue The new model.
      */
     public void setModel(FontChooserModel newValue) {
         FontChooserModel oldValue = model;
         if (oldValue != null) {
-            oldValue.removeTreeModelListener(modelHandler);
+            oldValue.removeTreeModelListener(new ModelHandler());
         }
         this.model = newValue;
         if (newValue != null) {
-            newValue.addTreeModelListener(modelHandler);
+            newValue.addTreeModelListener(new ModelHandler());
         }
         firePropertyChange(MODEL_PROPERTY, oldValue, newValue);
         updateSelectionPath(selectedFont);
     }
-    /**
-     * This method is called from within the constructor to
-     * initialize the form.
-     * WARNING: Do NOT modify this code. The content of this method is
-     * always regenerated by the Form Editor.
-     * /
-       // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
-    private void initComponents() {
-    }// </editor-fold>//GEN-END:initComponents
-     */
-    // Variables declaration - do not modify//GEN-BEGIN:variables
-    // End of variables declaration//GEN-END:variables
+
+    private class ModelHandler implements TreeModelListener {
+        @Override
+        public void treeNodesChanged(TreeModelEvent e) {
+            updateSelectionPath(getSelectedFont());
+        }
+
+        @Override
+        public void treeNodesInserted(TreeModelEvent e) {
+            updateSelectionPath(getSelectedFont());
+        }
+
+        @Override
+        public void treeNodesRemoved(TreeModelEvent e) {
+            updateSelectionPath(getSelectedFont());
+        }
+
+        @Override
+        public void treeStructureChanged(TreeModelEvent e) {
+            updateSelectionPath(getSelectedFont());
+        }
+    }
+
+    private class AncestorPropertyChangeListener implements PropertyChangeListener {
+        @Override
+        public void propertyChange(PropertyChangeEvent evt) {
+            if ("ancestor".equals(evt.getPropertyName()) && evt.getNewValue() != null) {
+                try {
+                    ((DefaultFontChooserModel) model).setFonts(getAllFonts());
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+                JFontChooser.this.removePropertyChangeListener(this);
+            }
+        }
+    }
 }
