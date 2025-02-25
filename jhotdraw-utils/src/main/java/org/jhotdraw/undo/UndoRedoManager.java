@@ -7,9 +7,7 @@
  */
 package org.jhotdraw.undo;
 
-import java.awt.event.*;
 import java.beans.*;
-import java.util.*;
 import javax.swing.*;
 import javax.swing.undo.*;
 import org.jhotdraw.util.*;
@@ -44,25 +42,6 @@ public class UndoRedoManager extends UndoManager { //javax.swing.undo.UndoManage
      * this flag is true.
      */
     private boolean undoOrRedoInProgress;
-    /**
-     * Sending this UndoableEdit event to the UndoRedoManager
-     * disables the Undo and Redo functions of the manager.
-     */
-    public static final UndoableEdit DISCARD_ALL_EDITS = new AbstractUndoableEdit() {
-        private static final long serialVersionUID = 1L;
-
-        @Override
-        public boolean canUndo() {
-            return false;
-        }
-
-        @Override
-        public boolean canRedo() {
-            return false;
-        }
-    };
-
-
 
 
     /**
@@ -88,10 +67,6 @@ public class UndoRedoManager extends UndoManager { //javax.swing.undo.UndoManage
         getLabels();
         undoAction = new UndoAction(this);
         redoAction = new RedoAction(this);
-    }
-
-    public void setLocale(Locale l) {
-        labels = ResourceBundleUtil.getBundle("org.jhotdraw.undo.Labels", l);
     }
 
     /**
