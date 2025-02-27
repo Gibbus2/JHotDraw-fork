@@ -6,7 +6,7 @@ on:
       - feature/undo-redo
   pull_request:
     branches:
-      - main
+      - develop
       - feature/undo-redo
 
 jobs:
